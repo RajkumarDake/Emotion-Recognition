@@ -68,20 +68,6 @@ voice_predictor = VoiceEmotionPredictor(
     encoder_path=voice_encoder_path
 )
 
-
-def warm_up_models():
-    # Pre-run a lightweight inference so the first real request
-    # does not pay TensorFlow's full initialization cost.
-    try:
-        print("Warming up text model...")
-        text_predictor.predict("hello")
-        print("✓ Text model warm-up completed")
-    except Exception as e:
-        print(f"Text model warm-up skipped: {e}")
-
-
-warm_up_models()
-
 @app.route('/api/predict', methods=['POST'])
 def predict():
     try:
