@@ -1,0 +1,2 @@
+1) landing page ( voice, text)
+2) nav buttions ( need to show the accuracy and fl score and remaining things)

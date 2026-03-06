@@ -1,0 +1,18 @@
+{
+  "model_output_dir": "/content/drive/MyDrive/models/anvitha",
+  "model_path_keras": "/content/drive/MyDrive/models/anvitha/anvitha_voice_emotion_model.keras",
+  "model_path_h5": "/content/drive/MyDrive/models/anvitha/anvitha_voice_emotion_model.h5",
+  "encoder_path": "/content/drive/MyDrive/models/anvitha/encoder.pkl",
+  "n_mfcc": 40,
+  "duration": 3,
+  "offset": 0.5,
+  "classes": [
+    "angry",
+    "disgust",
+    "fear",
+    "happy",
+    "neutral",
+    "ps",
+    "sad"
+  ]
+}
