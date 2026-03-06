@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './VoiceAnalyzerUI.css';
-import { apiUrl } from '../lib/api';
+import { apiUrl } from '../lib/api.js';
 
 /* ── Emotion data ── */
 const EMOTION_COLORS = {

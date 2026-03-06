@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './TextAnalyzerUI.css';
-import { apiUrl } from '../lib/api';
+import { apiUrl } from '../lib/api.js';
 
 const EMOTION_COLORS = {
   joy:'#4facfe',happiness:'#4facfe',happy:'#4facfe',

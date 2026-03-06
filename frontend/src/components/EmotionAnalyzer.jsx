@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import './EmotionAnalyzer.css';
-import { apiUrl } from '../lib/api';
+import { apiUrl } from '../lib/api.js';
 
 function EmotionAnalyzer() {
   const [text, setText] = useState('');
