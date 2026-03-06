@@ -14,7 +14,12 @@ from use_voice_model import VoiceEmotionPredictor
 
 frontend_dist_dir = os.path.join(_project_root, 'frontend', 'dist')
 app = Flask(__name__, static_folder=frontend_dist_dir, static_url_path='')
-CORS(app)
+CORS(
+    app,
+    resources={r"/api/*": {"origins": "*"}},
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 # Initialize the text emotion predictor
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -62,6 +67,20 @@ voice_predictor = VoiceEmotionPredictor(
     scaler_path=voice_scaler_path,
     encoder_path=voice_encoder_path
 )
+
+
+def warm_up_models():
+    # Pre-run a lightweight inference so the first real request
+    # does not pay TensorFlow's full initialization cost.
+    try:
+        print("Warming up text model...")
+        text_predictor.predict("hello")
+        print("✓ Text model warm-up completed")
+    except Exception as e:
+        print(f"Text model warm-up skipped: {e}")
+
+
+warm_up_models()
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
