@@ -10,11 +10,12 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.11
 
-  - type: static
+  - type: web
     name: anvitha-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
-    publishPath: dist
+    staticPublishPath: ./frontend/dist
     envVars:
       - key: NODE_VERSION
         value: 20.19.0
