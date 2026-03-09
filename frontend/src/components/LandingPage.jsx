@@ -231,7 +231,7 @@ function LandingPage() {
 
         <p className="landing-subtitle">
           Multimodal AI classifying emotions across 7+ categories.
-          <br />Get instant insights from voice and text in under a second.
+          <br />Get instant insights from voice and text in under 2 seconds.
         </p>
 
         {/* CTA */}
@@ -280,7 +280,7 @@ function LandingPage() {
           </div>
           <div className="stat-divider" />
           <div className="stat-item">
-            <span className="stat-number">&lt; 1s</span>
+            <span className="stat-number">&lt; 2s</span>
             <span className="stat-label">Response</span>
           </div>
         </div>

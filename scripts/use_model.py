@@ -68,6 +68,9 @@ class EmotionPredictor:
         # Model parameters (should match training)
         self.MAX_LEN = 229
         
+        # Hugging Face pipeline loaded lazily on first predict() call
+        self._hf_pipeline = None
+        
         # Load model and preprocessors
         self.model = None
         self.tokenizer = None
@@ -107,30 +110,25 @@ class EmotionPredictor:
             tokenizer_path: Path to the saved tokenizer
             label_encoder_path: Path to the saved label encoder
         """
-        print(f"Loading model from: {model_path}")
-        
         # Load the Keras model
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
         
         self.model = load_model(model_path)
-        print("✓ Model loaded successfully")
         
         # Load tokenizer
         if tokenizer_path and os.path.exists(tokenizer_path):
             with open(tokenizer_path, 'rb') as f:
                 self.tokenizer = pickle.load(f)
-            print("✓ Tokenizer loaded successfully")
         else:
-            print("⚠ Warning: Tokenizer not found. You'll need to train or provide one.")
+            pass  # Caller may train or provide later
         
         # Load label encoder
         if label_encoder_path and os.path.exists(label_encoder_path):
             with open(label_encoder_path, 'rb') as f:
                 self.label_encoder = pickle.load(f)
-            print("✓ Label encoder loaded successfully")
         else:
-            print("⚠ Warning: Label encoder not found. You'll need to train or provide one.")
+            pass  # Caller may train or provide later
     
     def train_tokenizer_from_data(self, data_path=None):
         """
@@ -141,8 +139,6 @@ class EmotionPredictor:
         """
         if data_path is None:
             data_path = os.path.join(self.project_root, 'datasets', 'text', 'train.txt')
-        
-        print(f"Training tokenizer from: {data_path}")
         
         # Load training data
         train_data = pd.read_csv(data_path, names=['Text', 'Emotion'], sep=';')
@@ -157,9 +153,6 @@ class EmotionPredictor:
         # Train label encoder
         self.label_encoder = LabelEncoder()
         self.label_encoder.fit(train_data['Emotion'])
-        
-        print(f"✓ Tokenizer trained with vocabulary size: {len(self.tokenizer.word_index)}")
-        print(f"✓ Label encoder trained with classes: {self.label_encoder.classes_}")
     
     def save_preprocessors(self, tokenizer_path=None, label_encoder_path=None):
         """
@@ -178,16 +171,50 @@ class EmotionPredictor:
         # Save tokenizer
         with open(tokenizer_path, 'wb') as f:
             pickle.dump(self.tokenizer, f)
-        print(f"✓ Tokenizer saved to: {tokenizer_path}")
         
         # Save label encoder
         with open(label_encoder_path, 'wb') as f:
             pickle.dump(self.label_encoder, f)
-        print(f"✓ Label encoder saved to: {label_encoder_path}")
+    
+    def _ensure_hf_pipeline(self):
+        """Load Hugging Face emotion pipeline only on first predict call (lazy load)."""
+        if self._hf_pipeline is None:
+            from transformers import pipeline
+            self._hf_pipeline = pipeline(
+                "text-classification",
+                model="j-hartmann/emotion-english-distilroberta-base",
+                return_all_scores=True,
+                framework="pt",
+            )
+    
+    def _predict_keras(self, text, return_probabilities=False):
+        """Predict using the loaded Keras model (fallback when HF not used)."""
+        if self.model is None or self.tokenizer is None or self.label_encoder is None:
+            raise ValueError("Keras model/tokenizer/label_encoder not loaded. Call load_model() first.")
+        cleaned_text = self.clean_text(text)
+        sequence = self.tokenizer.texts_to_sequences([cleaned_text])
+        padded = pad_sequences(sequence, maxlen=self.MAX_LEN)
+        prediction = self.model.predict(padded, verbose=0)
+        predicted_class_idx = np.argmax(prediction[0])
+        predicted_emotion = self.label_encoder.inverse_transform([predicted_class_idx])[0]
+        confidence = float(prediction[0][predicted_class_idx])
+        result = {
+            'text': text,
+            'cleaned_text': cleaned_text,
+            'emotion': predicted_emotion,
+            'confidence': confidence,
+        }
+        if return_probabilities:
+            result['probabilities'] = {
+                emotion: float(prob)
+                for emotion, prob in zip(self.label_encoder.classes_, prediction[0])
+            }
+        return result
     
     def predict(self, text, return_probabilities=False):
         """
-        Predict emotion from text.
+        Predict emotion from text. Uses Hugging Face pretrained model, loaded only
+        on first predict() call. Falls back to Keras model if HF is unavailable.
         
         Args:
             text: Input text string
@@ -196,53 +223,31 @@ class EmotionPredictor:
         Returns:
             Dictionary with prediction results including time taken in milliseconds
         """
-        if self.model is None:
-            raise ValueError("Model not loaded. Call load_model() first.")
-        
-        if self.tokenizer is None:
-            raise ValueError("Tokenizer not loaded. Call train_tokenizer_from_data() or load_model() with tokenizer.")
-        
-        if self.label_encoder is None:
-            raise ValueError("Label encoder not loaded. Call train_tokenizer_from_data() or load_model() with label encoder.")
-        
-        # Start timing
         start_time = time.time()
         
-        # Clean the input text
-        cleaned_text = self.clean_text(text)
-        
-        # Tokenize and pad
-        sequence = self.tokenizer.texts_to_sequences([cleaned_text])
-        padded = pad_sequences(sequence, maxlen=self.MAX_LEN)
-        
-        # Make prediction
-        prediction = self.model.predict(padded, verbose=0)
-        
-        # Get predicted class
-        predicted_class_idx = np.argmax(prediction[0])
-        predicted_emotion = self.label_encoder.inverse_transform([predicted_class_idx])[0]
-        confidence = float(prediction[0][predicted_class_idx])
-        
-        # Calculate time taken in milliseconds
-        end_time = time.time()
-        time_ms = round((end_time - start_time) * 1000, 2)
-        
-        result = {
-            'text': text,
-            'cleaned_text': cleaned_text,
-            'emotion': predicted_emotion,
-            'confidence': confidence,
-            'time_ms': time_ms
-        }
-        
-        if return_probabilities:
-            # Get all class probabilities
-            probabilities = {
-                emotion: float(prob)
-                for emotion, prob in zip(self.label_encoder.classes_, prediction[0])
+        try:
+            # Load Hugging Face pretrained only when predict is called (lazy load)
+            self._ensure_hf_pipeline()
+            # Run Hugging Face emotion classifier
+            emotion_scores = self._hf_pipeline(text)[0]
+            best = max(emotion_scores, key=lambda x: x['score'])
+            predicted_emotion = best['label']
+            confidence = float(best['score'])
+            cleaned_text = self.clean_text(text)
+            result = {
+                'text': text,
+                'cleaned_text': cleaned_text,
+                'emotion': predicted_emotion,
+                'confidence': confidence,
             }
-            result['probabilities'] = probabilities
+            if return_probabilities:
+                result['probabilities'] = {s['label']: s['score'] for s in emotion_scores}
+        except Exception:
+            # Fallback to Keras model if loaded
+            result = self._predict_keras(text, return_probabilities)
         
+        end_time = time.time()
+        result['time_ms'] = round((end_time - start_time) * 1000, 2)
         return result
     
     def predict_batch(self, texts, return_probabilities=False):

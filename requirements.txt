@@ -25,5 +25,10 @@ librosa>=0.10.1
 soundfile>=0.12.1
 pydub>=0.25.1
 
+# Multi-modal emotion detection
+openai-whisper>=20231117
+transformers>=4.30.0
+torch>=2.0.0
+
 # Utilities
 python-dotenv>=1.0.0
