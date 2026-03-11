@@ -106,11 +106,6 @@ function EmotionAnalyzer() {
     return new Blob([buffer], { type: 'audio/wav' });
   };
 
-  // Warm-up: call text predict once on load so the second (real) request is fast
-  useEffect(() => {
-    axios.post(apiUrl('/api/predict'), { text: 'hello' }).catch(() => {});
-  }, []);
-
   // Cleanup MediaRecorder on unmount
   useEffect(() => {
     return () => {

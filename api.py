@@ -11,8 +11,17 @@ warnings.filterwarnings('ignore')               # suppress sklearn version warni
 import logging
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
 logging.getLogger('absl').setLevel(logging.ERROR)
-logging.getLogger('werkzeug').setLevel(logging.WARNING)  # hide werkzeug INFO, keep errors
+logging.getLogger('werkzeug').setLevel(logging.WARNING)   # hide werkzeug INFO, keep errors
+logging.getLogger('httpx').setLevel(logging.ERROR)        # suppress HF "HTTP Request: ..." lines
+logging.getLogger('httpcore').setLevel(logging.ERROR)     # suppress underlying HTTP core logs
+logging.getLogger('huggingface_hub').setLevel(logging.ERROR)  # suppress HF hub warnings
+logging.getLogger('huggingface_hub.utils._http').setLevel(logging.ERROR)
+logging.getLogger('filelock').setLevel(logging.ERROR)     # suppress lock acquisition logs
 # ─────────────────────────────────────────────────────────────────────────────
+
+# App logger
+logging.basicConfig(format='%(message)s', level=logging.INFO)
+logger = logging.getLogger('api')
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
@@ -68,14 +77,14 @@ def validate_required_files():
 
 validate_required_files()
 
-print(f"Loading text model from {text_model_path}...")
+logger.info(f"Loading text model from {text_model_path}...")
 text_predictor = EmotionPredictor(
     model_path=text_model_path,
     tokenizer_path=tokenizer_path,
     label_encoder_path=label_encoder_path
 )
 
-print(f"Loading voice model from {voice_model_path}...")
+logger.info(f"Loading voice model from {voice_model_path}...")
 voice_predictor = VoiceEmotionPredictor(
     model_path=voice_model_path,
     scaler_path=voice_scaler_path,
@@ -102,12 +111,12 @@ def predict():
 
         from datetime import datetime
         ts = datetime.now().strftime('%H:%M:%S')
-        print(f"[{ts}] 📝 TEXT   | Input: \"{text[:60]}{'...' if len(text)>60 else ''}\" → Emotion: {result['emotion']} ({time_ms}ms)")
+        logger.info(f"[{ts}]  TEXT   | Input: \"{text[:60]}{'...' if len(text)>60 else ''}\" → Emotion: {result['emotion']} ({time_ms}ms)")
 
         return jsonify(result)
     
     except Exception as e:
-        print(f"[ERROR] Text prediction failed: {str(e)}")
+        logger.error(f"Text prediction failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/transcribe', methods=['POST'])
@@ -202,7 +211,7 @@ def predict_voice():
 
         from datetime import datetime
         ts = datetime.now().strftime('%H:%M:%S')
-        print(f"[{ts}] 🎤 VOICE  | Transcribed: \"{transcribed[:60]}{'...' if len(transcribed)>60 else ''}\" → Emotion: {emotion} ({time_ms}ms)")
+        logger.info(f"[{ts}]  VOICE  | Transcribed: \"{transcribed[:60]}{'...' if len(transcribed)>60 else ''}\" → Emotion: {emotion} ({time_ms}ms)")
 
         result['type'] = 'voice'
         result.pop('confidence', None)  # don't send confidence to UI
@@ -210,7 +219,7 @@ def predict_voice():
         return jsonify(result)
     
     except Exception as e:
-        print(f"[ERROR] Voice prediction failed: {str(e)}")
+        logger.error(f"Voice prediction failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
     finally:
@@ -246,6 +255,6 @@ def serve_frontend(path):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '5000'))
-    print(f"Starting Emotion Analysis API on http://localhost:{port}")
-    print("🚀 Application is running!")
+    logger.info(f"Starting Emotion Analysis API on http://localhost:{port}")
+    logger.info("🚀 Application is running!")
     app.run(host='0.0.0.0', port=port, debug=False)

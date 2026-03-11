@@ -69,11 +69,11 @@ class VoiceEmotionPredictor:
         
         self.whisper_model = whisper.load_model("small")
         
-        # Load pretrained emotion classifier
+        # Load emotion classifier
         self.emotion_classifier = pipeline(
             "text-classification",
             model="j-hartmann/emotion-english-distilroberta-base",
-            top_k=None,          # replaces deprecated return_all_scores=True
+            top_k=None,
             framework="pt"  
         )
 
@@ -82,7 +82,7 @@ class VoiceEmotionPredictor:
         import warnings
         warnings.filterwarnings('ignore', category=UserWarning)
         warnings.filterwarnings('ignore', category=FutureWarning)
-        result = self.whisper_model.transcribe(audio_path)
+        result = self.whisper_model.transcribe(audio_path, language="en")
         text = (result.get("text") or "").strip()
         return {"text": text if text else ""}
 
@@ -98,7 +98,7 @@ class VoiceEmotionPredictor:
         # PATH 1: Whisper transcription + text emotion model (PRIMARY)
         transcribed_text = ""
         try:
-            transcription_result = self.whisper_model.transcribe(audio_path)
+            transcription_result = self.whisper_model.transcribe(audio_path, language="en")
             transcribed_text = transcription_result["text"].strip()
             
             # Handle empty transcription

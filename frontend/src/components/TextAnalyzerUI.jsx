@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import './TextAnalyzerUI.css';
 import { apiUrl } from '../lib/api.js';
@@ -33,8 +33,6 @@ export default function TextAnalyzerUI() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [activeTag, setActiveTag] = useState(null);
-
-  useEffect(() => { axios.post(apiUrl('/api/predict'),{text:'hello'}).catch(()=>{}); }, []);
 
   const analyze = async (t = text) => {
     if (!t.trim()) { setError('Please enter some text to analyze.'); return; }

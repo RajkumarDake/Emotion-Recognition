@@ -79,9 +79,6 @@ function VoiceAnalyzerUI() {
     return new Blob([buf],{type:'audio/wav'});
   };
 
-  /* ── Warm up ── */
-  useEffect(() => { axios.post(apiUrl('/api/predict'),{text:'hello'}).catch(()=>{}); }, []);
-
   useEffect(() => () => { cancelAnimationFrame(animRef.current); }, []);
 
   const handleRecord = async () => {

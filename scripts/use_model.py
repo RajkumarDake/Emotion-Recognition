@@ -69,7 +69,7 @@ class EmotionPredictor:
         # Model parameters (should match training)
         self.MAX_LEN = 229
         
-        # Hugging Face pipeline loaded lazily on first predict() call
+        # Emotion pipeline loaded lazily on first predict() call
         self._hf_pipeline = None
         
         # Load model and preprocessors
@@ -178,13 +178,13 @@ class EmotionPredictor:
             pickle.dump(self.label_encoder, f)
     
     def _ensure_hf_pipeline(self):
-        """Load Hugging Face emotion pipeline only on first predict call (lazy load)."""
+        """Load emotion pipeline only on first predict call (lazy load)."""
         if self._hf_pipeline is None:
             from transformers import pipeline
             self._hf_pipeline = pipeline(
                 "text-classification",
                 model="j-hartmann/emotion-english-distilroberta-base",
-                top_k=None,          # replaces deprecated return_all_scores=True
+                top_k=None,
                 framework="pt",
             )
     
@@ -214,22 +214,21 @@ class EmotionPredictor:
     
     def predict(self, text, return_probabilities=False):
         """
-        Predict emotion from text. Uses Hugging Face pretrained model, loaded only
-        on first predict() call. Falls back to Keras model if HF is unavailable.
-        
+        Predict emotion from text.
+
         Args:
             text: Input text string
             return_probabilities: If True, return all class probabilities
-            
+
         Returns:
             Dictionary with prediction results including time taken in milliseconds
         """
         start_time = time.time()
-        
+
         try:
-            # Load Hugging Face pretrained only when predict is called (lazy load)
+            # Load emotion classifier lazily on first call
             self._ensure_hf_pipeline()
-            # Run Hugging Face emotion classifier
+            # Run emotion classifier
             emotion_scores = self._hf_pipeline(text)[0]
             best = max(emotion_scores, key=lambda x: x['score'])
             predicted_emotion = best['label']
@@ -243,9 +242,7 @@ class EmotionPredictor:
             }
             if return_probabilities:
                 result['probabilities'] = {s['label']: s['score'] for s in emotion_scores}
-        except Exception as hf_err:
-            # Log the HF error so you can see if it's unexpectedly falling back
-            print(f"[WARN] HuggingFace pipeline failed ({type(hf_err).__name__}: {hf_err}), falling back to Keras model")
+        except Exception:
             # Fallback to Keras model if loaded
             result = self._predict_keras(text, return_probabilities)
         
@@ -271,10 +268,6 @@ def main():
     """
     Main function to demonstrate model usage.
     """
-    print("=" * 60)
-    print("Anvitha Emotion Recognition - Model Inference")
-    print("=" * 60)
-    print()
     
     # Initialize predictor
     predictor = EmotionPredictor()
