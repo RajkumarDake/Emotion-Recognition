@@ -1,36 +1,20 @@
-# Core dependencies
-protobuf>=3.20.3,<5.0.0
+
 tensorflow>=2.16.0
 tf_keras>=2.16.0
-numpy>=1.24.0
-pandas>=2.0.0
-
-# NLP dependencies
+protobuf>=3.20.3,<5.0.0
 nltk>=3.8.0
 scikit-learn>=1.3.0
-
-# Chainlit for UI
-chainlit>=1.0.0
-opentelemetry-proto>=1.2.0,<1.38.0
-
-# Visualization (optional, for development)
-matplotlib>=3.7.0
-seaborn>=0.12.0
-
-# API Backend
-flask>=3.0.0
-flask-cors>=4.0.0
-gunicorn>=23.0.0
-
-# Audio inference
+numpy>=1.24.0
+pandas>=2.0.0
+transformers>=4.30.0
+torch>=2.0.0
+sentencepiece>=0.1.99
 librosa>=0.10.1
 soundfile>=0.12.1
 pydub>=0.25.1
-
-# Multi-modal emotion detection
+imageio-ffmpeg>=0.4.9
 openai-whisper>=20231117
-transformers>=4.30.0
-torch>=2.0.0
-
-# Utilities
+flask>=3.0.0
+flask-cors>=4.0.0
+gunicorn>=23.0.0
 python-dotenv>=1.0.0

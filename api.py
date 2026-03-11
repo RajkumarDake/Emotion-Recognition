@@ -1,7 +1,21 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
 import os
 import sys
+import warnings
+
+# ── Silence noisy logs before any other imports ───────────────────────────────
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'       # suppress oneDNN floating-point notices
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'        # suppress TF C++ INFO/WARNING logs
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'  # suppress HuggingFace load reports
+warnings.filterwarnings('ignore')               # suppress sklearn version warnings etc.
+
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('absl').setLevel(logging.ERROR)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)  # hide werkzeug INFO, keep errors
+# ─────────────────────────────────────────────────────────────────────────────
+
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import time
 import tempfile
 
@@ -76,7 +90,6 @@ def predict():
             return jsonify({'error': 'No text provided'}), 400
         
         text = data['text']
-        print(f"Analyzing text: {text[:50]}...")
         
         # Predict emotion
         start_time = time.time()
@@ -86,10 +99,15 @@ def predict():
         result['time_ms'] = time_ms
         result['type'] = 'text'
         result.pop('confidence', None)  # don't send confidence to UI
+
+        from datetime import datetime
+        ts = datetime.now().strftime('%H:%M:%S')
+        print(f"[{ts}] 📝 TEXT   | Input: \"{text[:60]}{'...' if len(text)>60 else ''}\" → Emotion: {result['emotion']} ({time_ms}ms)")
+
         return jsonify(result)
     
     except Exception as e:
-        print(f"Error during prediction: {str(e)}")
+        print(f"[ERROR] Text prediction failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/transcribe', methods=['POST'])
@@ -150,7 +168,6 @@ def predict_voice():
         fd, temp_path = tempfile.mkstemp(suffix='.audio')
         os.close(fd)
         audio_file.save(temp_path)
-        print(f"Analyzing voice sample: {temp_path}")
 
         path_to_use = temp_path
         try:
@@ -179,15 +196,21 @@ def predict_voice():
                     'Could not convert audio. Install ffmpeg and pydub, or try again in Chrome/Edge.'
                 ) from conv_e
 
+        time_ms = round((end_time - start_time) * 1000, 2)
+        transcribed = result.get('text', '').strip() or '(no transcription)'
+        emotion = result.get('emotion', '?')
+
+        from datetime import datetime
+        ts = datetime.now().strftime('%H:%M:%S')
+        print(f"[{ts}] 🎤 VOICE  | Transcribed: \"{transcribed[:60]}{'...' if len(transcribed)>60 else ''}\" → Emotion: {emotion} ({time_ms}ms)")
+
         result['type'] = 'voice'
         result.pop('confidence', None)  # don't send confidence to UI
         result.pop('time_ms', None)  # don't send time for voice
         return jsonify(result)
     
     except Exception as e:
-        print(f"Error during voice prediction: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"[ERROR] Voice prediction failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
     finally:
@@ -224,4 +247,5 @@ def serve_frontend(path):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '5000'))
     print(f"Starting Emotion Analysis API on http://localhost:{port}")
+    print("🚀 Application is running!")
     app.run(host='0.0.0.0', port=port, debug=False)

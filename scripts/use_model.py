@@ -12,9 +12,10 @@ import re
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.models import load_model
+from tf_keras.preprocessing.text import Tokenizer
+from tf_keras.preprocessing.sequence import pad_sequences
+import tensorflow as _tf
+_tf_load_model = _tf.keras.models.load_model
 from sklearn.preprocessing import LabelEncoder
 import pickle
 import json
@@ -114,7 +115,7 @@ class EmotionPredictor:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
         
-        self.model = load_model(model_path)
+        self.model = _tf_load_model(model_path, compile=False)
         
         # Load tokenizer
         if tokenizer_path and os.path.exists(tokenizer_path):
