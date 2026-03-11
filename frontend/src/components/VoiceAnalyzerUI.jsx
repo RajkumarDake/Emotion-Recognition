@@ -22,7 +22,8 @@ const getEmoji = (e) => EMOTION_EMOJI[(e||'').toLowerCase()] || '💭';
 function VoiceAnalyzerUI() {
   const [isRecording, setIsRecording] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [voiceTranscription, setVoiceTranscription] = useState(null); // Box 1: "You said"
+  const [emotionResult, setEmotionResult] = useState(null);            // Box 2: "Voice Emotion Detected"
   const [error, setError] = useState(null);
   const [bars, setBars] = useState(Array(36).fill(4));
   const mediaRecorderRef = useRef(null);
@@ -90,7 +91,7 @@ function VoiceAnalyzerUI() {
       stopViz();
       return;
     }
-    setError(null); setResult(null);
+    setError(null); setVoiceTranscription(null); setEmotionResult(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({audio:true});
       streamRef.current = stream;
@@ -102,15 +103,35 @@ function VoiceAnalyzerUI() {
       mr.onstop = async () => {
         try {
           setLoading(true);
+          setError(null);
+          setVoiceTranscription(null);
+          setEmotionResult(null);
           const raw = new Blob(audioChunksRef.current,{type:mr.mimeType||'audio/webm'});
           const wav = await blobToWav(raw);
           const fd = new FormData();
           fd.append('audio',wav,'rec.wav');
-          const res = await axios.post(apiUrl('/api/predict-voice'),fd,{headers:{'Content-Type':'multipart/form-data'}});
-          setResult(res.data);
+          // Step 1: transcribe only — show Box 1 "You said"
+          const transcribeRes = await axios.post(apiUrl('/api/transcribe'), fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          const text = (transcribeRes.data?.text || '').trim() || '';
+          setVoiceTranscription(text);
+
+          // Run Step 2 in a separate task so React doesn't batch both updates (Box 1 paints first, then Box 2 when predict returns)
+          setTimeout(async () => {
+            try {
+              const predictRes = await axios.post(apiUrl('/api/predict'), { text: text || 'neutral' });
+              setEmotionResult(predictRes.data);
+            } catch (e) {
+              setError(e.response?.data?.error || 'Failed to analyze voice.');
+            } finally {
+              setLoading(false);
+              setIsRecording(false);
+            }
+          }, 0);
         } catch(e) {
           setError(e.response?.data?.error||'Failed to analyze voice.');
-        } finally { setLoading(false); setIsRecording(false); }
+          setLoading(false);
+          setIsRecording(false);
+        }
       };
       mr.start();
       setIsRecording(true);
@@ -119,114 +140,127 @@ function VoiceAnalyzerUI() {
     }
   };
 
-  const emotionColor = result ? getColor(result.emotion) : '#a78bfa';
+  const emotionColor = emotionResult ? getColor(emotionResult.emotion) : '#a78bfa';
 
   return (
     <div className="vai-root">
       {/* Background glow */}
       <div className="vai-bg-glow" style={{background:`radial-gradient(ellipse at 50% 0%,${emotionColor}22 0%,transparent 65%)`}}/>
 
-      {/* Title */}
-      <div className="vai-header">
-        <div className="vai-icon-wrap" style={{boxShadow:`0 0 28px ${emotionColor}55`}}>
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z" stroke={emotionColor} strokeWidth="2" strokeLinecap="round"/>
-            <path d="M19 10V12C19 15.866 15.866 19 12 19C8.134 19 5 15.866 5 12V10" stroke={emotionColor} strokeWidth="2" strokeLinecap="round"/>
-            <path d="M12 19V23M8 23H16" stroke={emotionColor} strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <div>
-          <h2 className="vai-title">Voice Emotion Analyzer</h2>
-          <p className="vai-subtitle">Speak aloud — AI detects your emotional tone in real-time</p>
-        </div>
-      </div>
+      <div className="vai-layout">
+        {/* Left: title, visualizer, record, tips */}
+        <div className="vai-left">
+          <div className="vai-header">
+            <div className="vai-icon-wrap" style={{boxShadow:`0 0 28px ${emotionColor}55`}}>
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z" stroke={emotionColor} strokeWidth="2" strokeLinecap="round"/>
+                <path d="M19 10V12C19 15.866 15.866 19 12 19C8.134 19 5 15.866 5 12V10" stroke={emotionColor} strokeWidth="2" strokeLinecap="round"/>
+                <path d="M12 19V23M8 23H16" stroke={emotionColor} strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <h2 className="vai-title">Voice Emotion Analyzer</h2>
+              <p className="vai-subtitle">Speak aloud — AI detects your emotional tone in real-time</p>
+            </div>
+          </div>
 
-      {/* Waveform visualizer */}
-      <div className="vai-visualizer" style={{borderColor:`${emotionColor}33`}}>
-        <div className="vai-viz-bars">
-          {bars.map((h, i) => (
-            <div key={i} className="vai-bar"
-              style={{
-                height: `${h}px`,
-                background: isRecording
-                  ? `linear-gradient(to top,${emotionColor},${emotionColor}88)`
-                  : loading
-                  ? `linear-gradient(to top,#a78bfa,#7c3aed)`
-                  : 'rgba(139,92,246,0.25)',
-                transition: isRecording ? 'height 0.06s ease' : 'height 0.4s ease, background 0.5s',
-              }}
-            />
-          ))}
-        </div>
-        <div className="vai-viz-label">
-          {isRecording && <><span className="vai-rec-dot" />Recording...</>}
-          {loading && !isRecording && <><span className="vai-spin" />Analyzing audio...</>}
-          {!isRecording && !loading && <span style={{opacity:.5}}>Press record to begin</span>}
-        </div>
-      </div>
+          <div className="vai-visualizer" style={{borderColor:`${emotionColor}33`}}>
+            <div className="vai-viz-bars">
+              {bars.map((h, i) => (
+                <div key={i} className="vai-bar"
+                  style={{
+                    height: `${h}px`,
+                    background: isRecording
+                      ? `linear-gradient(to top,${emotionColor},${emotionColor}88)`
+                      : loading
+                      ? `linear-gradient(to top,#a78bfa,#7c3aed)`
+                      : 'rgba(139,92,246,0.25)',
+                    transition: isRecording ? 'height 0.06s ease' : 'height 0.4s ease, background 0.5s',
+                  }}
+                />
+              ))}
+            </div>
+            <div className="vai-viz-label">
+              {isRecording && <><span className="vai-rec-dot" />Recording...</>}
+              {loading && !isRecording && <><span className="vai-spin" />Analyzing audio...</>}
+              {!isRecording && !loading && <span style={{opacity:.5}}>Press record to begin</span>}
+            </div>
+          </div>
 
-      {/* Record button */}
-      <div className="vai-controls">
-        <button
-          className={`vai-record-btn ${isRecording?'recording':''} ${loading?'loading':''}`}
-          onClick={handleRecord}
-          disabled={loading}
-          style={isRecording ? {boxShadow:`0 0 40px ${emotionColor}66,0 8px 32px ${emotionColor}44`}:{}}
-        >
-          {isRecording ? (
-            <>
-              <span className="vai-btn-icon">
-                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-              </span>
-              Stop & Analyze
-            </>
-          ) : loading ? (
-            <><span className="vai-spin-lg"/><span>Processing...</span></>
-          ) : (
-            <>
-              <span className="vai-btn-icon vai-mic-pulse">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <path d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                  <path d="M19 10V12C19 15.866 15.866 19 12 19C8.134 19 5 15.866 5 12V10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                  <path d="M12 19V23M8 23H16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
-                </svg>
-              </span>
-              Start Recording
-            </>
+          <div className="vai-controls">
+            <button
+              className={`vai-record-btn ${isRecording?'recording':''} ${loading?'loading':''}`}
+              onClick={handleRecord}
+              disabled={loading}
+              style={isRecording ? {boxShadow:`0 0 40px ${emotionColor}66,0 8px 32px ${emotionColor}44`}:{}}
+            >
+              {isRecording ? (
+                <>
+                  <span className="vai-btn-icon">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                  </span>
+                  Stop & Analyze
+                </>
+              ) : loading ? (
+                <><span className="vai-spin-lg"/><span>Processing...</span></>
+              ) : (
+                <>
+                  <span className="vai-btn-icon vai-mic-pulse">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M12 1C10.34 1 9 2.34 9 4V12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12V4C15 2.34 13.66 1 12 1Z" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                      <path d="M19 10V12C19 15.866 15.866 19 12 19C8.134 19 5 15.866 5 12V10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                      <path d="M12 19V23M8 23H16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/>
+                    </svg>
+                  </span>
+                  Start Recording
+                </>
+              )}
+            </button>
+          </div>
+
+          {error && (
+            <div className="vai-error">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><path d="M12 8V12M12 16h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+              {error}
+            </div>
           )}
-        </button>
-      </div>
 
-      {/* Error */}
-      {error && (
-        <div className="vai-error">
-          <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/><path d="M12 8V12M12 16h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-          {error}
-        </div>
-      )}
-
-      {/* Result */}
-      {result && (
-        <div className="vai-result" style={{borderColor:`${emotionColor}44`,boxShadow:`0 0 40px ${emotionColor}22`}}>
-          <div className="vai-result-glow" style={{background:`radial-gradient(circle at 50% 0%,${emotionColor}25,transparent 65%)`}}/>
-          <div className="vai-result-emoji">{getEmoji(result.emotion)}</div>
-          <div className="vai-result-body">
-            <span className="vai-result-tag">Voice Emotion Detected</span>
-            <span className="vai-result-emotion" style={{color:emotionColor}}>
-              {result.emotion?.charAt(0).toUpperCase()+(result.emotion?.slice(1)||'')}
-            </span>
-            {result.time_ms != null && (
-              <span className="vai-result-time">⚡ {result.time_ms} ms</span>
-            )}
+          <div className="vai-tips">
+            <span className="vai-tip"><span>💡</span> Speak clearly for 3–5 seconds</span>
+            <span className="vai-tip"><span>🎙️</span> Use Chrome or Edge for best results</span>
+            <span className="vai-tip"><span>🔇</span> Minimize background noise</span>
           </div>
         </div>
-      )}
 
-      {/* Tips */}
-      <div className="vai-tips">
-        <span className="vai-tip"><span>💡</span> Speak clearly for 3–5 seconds</span>
-        <span className="vai-tip"><span>🎙️</span> Use Chrome or Edge for best results</span>
-        <span className="vai-tip"><span>🔇</span> Minimize background noise</span>
+        {/* Right: result boxes */}
+        <aside className="vai-right">
+          {voiceTranscription != null && (
+            <div className="vai-box vai-box-1">
+              <div className="vai-box-label">YOU SAID</div>
+              <p className="vai-box-text">{voiceTranscription}</p>
+            </div>
+          )}
+          {(emotionResult || (voiceTranscription != null && loading)) && (
+            <div className="vai-box vai-box-2" style={{borderColor:`${emotionColor}44`,boxShadow:`0 0 40px ${emotionColor}22`}}>
+              <div className="vai-result-glow" style={{background:`radial-gradient(circle at 50% 0%,${emotionColor}25,transparent 65%)`}}/>
+              <div className="vai-result-emoji">{getEmoji(emotionResult?.emotion)}</div>
+              <span className="vai-result-tag">VOICE EMOTION DETECTED</span>
+              {emotionResult?.emotion ? (
+                <span className="vai-result-emotion" style={{color:emotionColor}}>
+                  {emotionResult.emotion.charAt(0).toUpperCase() + emotionResult.emotion.slice(1)}
+                </span>
+              ) : (
+                <div className="vai-analyzing"><span className="vai-spin"/> Analyzing emotion...</div>
+              )}
+            </div>
+          )}
+          {!voiceTranscription && !emotionResult && !loading && (
+            <div className="vai-placeholder">
+              <p className="vai-placeholder-title">Results appear here</p>
+              <p className="vai-placeholder-sub">Record your voice to see transcription and detected emotion</p>
+            </div>
+          )}
+        </aside>
       </div>
     </div>
   );

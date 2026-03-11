@@ -92,6 +92,51 @@ def predict():
         print(f"Error during prediction: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/transcribe', methods=['POST'])
+def transcribe():
+    """Transcribe audio to text only (no emotion). Returns quickly for UI feedback."""
+    temp_path = None
+    converted_path = None
+    try:
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
+        audio_file = request.files['audio']
+        fd, temp_path = tempfile.mkstemp(suffix='.audio')
+        os.close(fd)
+        audio_file.save(temp_path)
+        path_to_use = temp_path
+        try:
+            result = voice_predictor.transcribe_only(path_to_use)
+        except Exception as e:
+            err_msg = str(type(e).__name__) + (str(e) or '')
+            if 'Format not recognised' not in err_msg and 'NoBackendError' not in err_msg and 'LibsndfileError' not in err_msg:
+                raise
+            try:
+                from pydub import AudioSegment
+                converted_path = temp_path + '.wav'
+                AudioSegment.from_file(temp_path).export(converted_path, format='wav')
+                path_to_use = converted_path
+                result = voice_predictor.transcribe_only(path_to_use)
+            except ImportError:
+                raise ValueError(
+                    'Unsupported audio format. Use a modern browser (Chrome/Edge) so recording is sent as WAV, '
+                    'or install pydub and ffmpeg for server-side conversion.'
+                ) from e
+            except Exception as conv_e:
+                raise ValueError(
+                    'Could not convert audio. Install ffmpeg and pydub, or try again in Chrome/Edge.'
+                ) from conv_e
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        for p in (converted_path, temp_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+
 @app.route('/api/predict-voice', methods=['POST'])
 def predict_voice():
     temp_path = None
@@ -134,10 +179,9 @@ def predict_voice():
                     'Could not convert audio. Install ffmpeg and pydub, or try again in Chrome/Edge.'
                 ) from conv_e
 
-        time_ms = round((end_time - start_time) * 1000, 2)
-        result['time_ms'] = time_ms
         result['type'] = 'voice'
         result.pop('confidence', None)  # don't send confidence to UI
+        result.pop('time_ms', None)  # don't send time for voice
         return jsonify(result)
     
     except Exception as e:

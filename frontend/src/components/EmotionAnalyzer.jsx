@@ -6,6 +6,7 @@ import { apiUrl } from '../lib/api.js';
 function EmotionAnalyzer() {
   const [text, setText] = useState('');
   const [result, setResult] = useState(null);
+  const [voiceTranscription, setVoiceTranscription] = useState(null); // First box: "You said" (set when transcribe returns)
   const [loading, setLoading] = useState(false);
   const [analyzingType, setAnalyzingType] = useState(null); // 'text' or 'voice'
   const [error, setError] = useState(null);
@@ -124,23 +125,38 @@ function EmotionAnalyzer() {
     setAnalyzingType('voice');
     setError(null);
     setResult(null);
+    setVoiceTranscription(null);
+
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.wav');
 
     try {
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.wav');
-
-      const response = await axios.post(apiUrl('/api/predict-voice'), formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      // Step 1: Transcribe only — show first box "You said" (~5s)
+      const transcribeRes = await axios.post(apiUrl('/api/transcribe'), formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
+      const transcribedText = (transcribeRes.data?.text || '').trim() || '';
+      setVoiceTranscription(transcribedText);
 
-      const { confidence, ...rest } = response.data;
-      setResult({ ...rest, isVoice: true });
+      // Run Step 2 in a separate task so React doesn't batch both updates (Box 1 paints first, then Box 2 when predict returns)
+      setTimeout(async () => {
+        try {
+          const predictRes = await axios.post(apiUrl('/api/predict'), {
+            text: transcribedText || 'neutral',
+          });
+          const { confidence, ...rest } = predictRes.data;
+          setResult({ ...rest, isVoice: true });
+        } catch (err) {
+          setError(err.response?.data?.error || 'Failed to analyze voice emotion. Please try again.');
+          console.error('Error:', err);
+        } finally {
+          setLoading(false);
+          setIsRecording(false);
+        }
+      }, 0);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to analyze voice emotion. Please try again.');
       console.error('Error:', err);
-    } finally {
       setLoading(false);
       setIsRecording(false);
     }
@@ -156,6 +172,7 @@ function EmotionAnalyzer() {
     setAnalyzingType('text');
     setError(null);
     setResult(null);
+    setVoiceTranscription(null);
 
     try {
       const response = await axios.post(apiUrl('/api/predict'), {
@@ -387,33 +404,83 @@ function EmotionAnalyzer() {
           </div>
         </div>
 
-        {/* Right column: result panel (always visible) */}
+        {/* Right column: result panel — two separate boxes for voice, one for text */}
         <aside className="result-panel">
-          {result ? (
-            <div className="result-card-wrapper" style={{ '--emotion-color': getEmotionColor(result.emotion) }}>
+          {/* Voice flow: Box 1 "You said" + Box 2 "Voice Emotion Detected" */}
+          {(voiceTranscription != null || result?.isVoice) ? (
+            <div className="result-panel-voice">
+              {/* Box 1: You said (appears first after transcribe) */}
+              {voiceTranscription != null && (
+                <div className="result-card-wrapper result-box-you-said">
+                  <div className="result-card-modern">
+                    <div className="result-text-label result-box-label">YOU SAID</div>
+                    <div className="result-text result-box-text">{voiceTranscription}</div>
+                  </div>
+                </div>
+              )}
+              {/* Box 2: Voice Emotion (appears after predict; or "Analyzing emotion..." while waiting) */}
+              {(result?.isVoice || (voiceTranscription != null && loading)) && (
+                <div className="result-card-wrapper" style={{ '--emotion-color': getEmotionColor(result.emotion || 'neutral') }}>
+                  <div className="result-card-bg-blobs">
+                    <div className="result-bg-blob result-bg-blob-1" style={{ background: `radial-gradient(circle, ${getEmotionColor(result.emotion || 'neutral')}18 0%, transparent 70%)` }} />
+                    <div className="result-bg-blob result-bg-blob-2" style={{ background: `radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%)` }} />
+                  </div>
+                  <div className="result-card-modern emotion-reveal" data-emotion={(result.emotion || 'neutral').toLowerCase().trim()}>
+                    <div className="result-card-glow" style={{ background: `radial-gradient(circle at 50% 0%, ${getEmotionColor(result.emotion || 'neutral')}28 0%, transparent 65%)` }} />
+                    <div className="result-header-modern">
+                      <div
+                        className="result-icon result-icon-emotion"
+                        style={{
+                          background: `linear-gradient(135deg, ${getEmotionColor(result.emotion || 'neutral')} 0%, ${getEmotionColor(result.emotion || 'neutral')}dd 100%)`,
+                          boxShadow: `0 12px 32px ${getEmotionColor(result.emotion || 'neutral')}55`
+                        }}
+                      >
+                        <span className="result-emotion-emoji" aria-hidden="true">{getEmotionSymbol(result.emotion)}</span>
+                      </div>
+                      <div className="result-content">
+                        <div className="result-label-modern">VOICE EMOTION DETECTED</div>
+                        {result?.emotion ? (
+                          <div
+                            className="result-emotion-modern emotion-word"
+                            style={{ color: getEmotionColor(result.emotion) }}
+                          >
+                            {getEmotionDisplayLabel(result.emotion)}
+                          </div>
+                        ) : (
+                          <div className="result-analyzing-emotion">
+                            <span className="spinner-small"></span>
+                            <span>Analyzing emotion...</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : result ? (
+            /* Text flow: single card */
+            <div className="result-card-wrapper" style={{ '--emotion-color': getEmotionColor(result.emotion || 'neutral') }}>
               <div className="result-card-bg-blobs">
-                <div className="result-bg-blob result-bg-blob-1" style={{ background: `radial-gradient(circle, ${getEmotionColor(result.emotion)}18 0%, transparent 70%)` }} />
+                <div className="result-bg-blob result-bg-blob-1" style={{ background: `radial-gradient(circle, ${getEmotionColor(result.emotion || 'neutral')}18 0%, transparent 70%)` }} />
                 <div className="result-bg-blob result-bg-blob-2" style={{ background: `radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%)` }} />
                 <div className="result-bg-blob result-bg-blob-3" style={{ background: `radial-gradient(circle, rgba(34, 211, 238, 0.08) 0%, transparent 70%)` }} />
               </div>
-              <div
-                className="result-card-modern emotion-reveal"
-                data-emotion={(result.emotion || '').toLowerCase().trim()}
-              >
+              <div className="result-card-modern emotion-reveal" data-emotion={(result.emotion || 'neutral').toLowerCase().trim()}>
                 <div className="result-card-shimmer" />
-                <div className="result-card-glow" style={{ background: `radial-gradient(circle at 50% 0%, ${getEmotionColor(result.emotion)}28 0%, transparent 65%)` }} />
+                <div className="result-card-glow" style={{ background: `radial-gradient(circle at 50% 0%, ${getEmotionColor(result.emotion || 'neutral')}28 0%, transparent 65%)` }} />
                 <div className="result-header-modern">
                   <div
                     className="result-icon result-icon-emotion"
                     style={{
-                      background: `linear-gradient(135deg, ${getEmotionColor(result.emotion)} 0%, ${getEmotionColor(result.emotion)}dd 100%)`,
-                      boxShadow: `0 12px 32px ${getEmotionColor(result.emotion)}55, 0 0 0 1px ${getEmotionColor(result.emotion)}25`
+                      background: `linear-gradient(135deg, ${getEmotionColor(result.emotion || 'neutral')} 0%, ${getEmotionColor(result.emotion || 'neutral')}dd 100%)`,
+                      boxShadow: `0 12px 32px ${getEmotionColor(result.emotion || 'neutral')}55, 0 0 0 1px ${getEmotionColor(result.emotion || 'neutral')}25`
                     }}
                   >
                     <span className="result-emotion-emoji" aria-hidden="true">{getEmotionSymbol(result.emotion)}</span>
                   </div>
                   <div className="result-content">
-                    <div className="result-label-modern">{result.isVoice ? 'Voice Emotion' : 'Text Emotion'}</div>
+                    <div className="result-label-modern">Text Emotion</div>
                     <div
                       className="result-emotion-modern emotion-word"
                       style={{ color: getEmotionColor(result.emotion) }}
@@ -436,7 +503,7 @@ function EmotionAnalyzer() {
                     <span>Analysis Complete</span>
                   </div>
                   {result.time_ms != null && (
-                    <div className={`result-time ${result.isVoice ? 'result-time-voice' : 'result-time-text'}`}>
+                    <div className="result-time result-time-text">
                       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
                         <path d="M12 6V12L16 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
