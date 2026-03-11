@@ -73,7 +73,7 @@ class VoiceEmotionPredictor:
         self.emotion_classifier = pipeline(
             "text-classification",
             model="j-hartmann/emotion-english-distilroberta-base",
-            return_all_scores=True,
+            top_k=None,          # replaces deprecated return_all_scores=True
             framework="pt"  
         )
 

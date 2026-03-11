@@ -184,7 +184,7 @@ class EmotionPredictor:
             self._hf_pipeline = pipeline(
                 "text-classification",
                 model="j-hartmann/emotion-english-distilroberta-base",
-                return_all_scores=True,
+                top_k=None,          # replaces deprecated return_all_scores=True
                 framework="pt",
             )
     
@@ -243,7 +243,9 @@ class EmotionPredictor:
             }
             if return_probabilities:
                 result['probabilities'] = {s['label']: s['score'] for s in emotion_scores}
-        except Exception:
+        except Exception as hf_err:
+            # Log the HF error so you can see if it's unexpectedly falling back
+            print(f"[WARN] HuggingFace pipeline failed ({type(hf_err).__name__}: {hf_err}), falling back to Keras model")
             # Fallback to Keras model if loaded
             result = self._predict_keras(text, return_probabilities)
         
