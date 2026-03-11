@@ -12,7 +12,6 @@ sentencepiece>=0.1.99
 librosa>=0.10.1
 soundfile>=0.12.1
 pydub>=0.25.1
-imageio-ffmpeg>=0.4.9
 openai-whisper>=20231117
 flask>=3.0.0
 flask-cors>=4.0.0
