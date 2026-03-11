@@ -26,6 +26,8 @@ venv/
 env/
 ENV/
 .venv/
+.venv-old/
+.venv*/
 .python-version
 
 # Jupyter Notebook
@@ -58,7 +60,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Render / local env files
+# Render / local env files (.env and old env dirs)
 .env
 .env.*
 !.env.example
