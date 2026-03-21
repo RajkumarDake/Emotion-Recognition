@@ -1,7 +1,30 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
 import os
 import sys
+import warnings
+
+# ── Silence noisy logs before any other imports ───────────────────────────────
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'       # suppress oneDNN floating-point notices
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'        # suppress TF C++ INFO/WARNING logs
+os.environ['TRANSFORMERS_VERBOSITY'] = 'error'  # suppress HuggingFace load reports
+warnings.filterwarnings('ignore')               # suppress sklearn version warnings etc.
+
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('absl').setLevel(logging.ERROR)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)   # hide werkzeug INFO, keep errors
+logging.getLogger('httpx').setLevel(logging.ERROR)        # suppress HF "HTTP Request: ..." lines
+logging.getLogger('httpcore').setLevel(logging.ERROR)     # suppress underlying HTTP core logs
+logging.getLogger('huggingface_hub').setLevel(logging.ERROR)  # suppress HF hub warnings
+logging.getLogger('huggingface_hub.utils._http').setLevel(logging.ERROR)
+logging.getLogger('filelock').setLevel(logging.ERROR)     # suppress lock acquisition logs
+# ─────────────────────────────────────────────────────────────────────────────
+
+# App logger
+logging.basicConfig(format='%(message)s', level=logging.INFO)
+logger = logging.getLogger('api')
+
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import time
 import tempfile
 
@@ -54,14 +77,14 @@ def validate_required_files():
 
 validate_required_files()
 
-print(f"Loading text model from {text_model_path}...")
+logger.info(f"Loading text model from {text_model_path}...")
 text_predictor = EmotionPredictor(
     model_path=text_model_path,
     tokenizer_path=tokenizer_path,
     label_encoder_path=label_encoder_path
 )
 
-print(f"Loading voice model from {voice_model_path}...")
+logger.info(f"Loading voice model from {voice_model_path}...")
 voice_predictor = VoiceEmotionPredictor(
     model_path=voice_model_path,
     scaler_path=voice_scaler_path,
@@ -76,7 +99,6 @@ def predict():
             return jsonify({'error': 'No text provided'}), 400
         
         text = data['text']
-        print(f"Analyzing text: {text[:50]}...")
         
         # Predict emotion
         start_time = time.time()
@@ -86,11 +108,61 @@ def predict():
         result['time_ms'] = time_ms
         result['type'] = 'text'
         result.pop('confidence', None)  # don't send confidence to UI
+
+        from datetime import datetime
+        ts = datetime.now().strftime('%H:%M:%S')
+        logger.info(f"[{ts}]  TEXT   | Input: \"{text[:60]}{'...' if len(text)>60 else ''}\" → Emotion: {result['emotion']} ({time_ms}ms)")
+
         return jsonify(result)
     
     except Exception as e:
-        print(f"Error during prediction: {str(e)}")
+        logger.error(f"Text prediction failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/transcribe', methods=['POST'])
+def transcribe():
+    """Transcribe audio to text only (no emotion). Returns quickly for UI feedback."""
+    temp_path = None
+    converted_path = None
+    try:
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
+        audio_file = request.files['audio']
+        fd, temp_path = tempfile.mkstemp(suffix='.audio')
+        os.close(fd)
+        audio_file.save(temp_path)
+        path_to_use = temp_path
+        try:
+            result = voice_predictor.transcribe_only(path_to_use)
+        except Exception as e:
+            err_msg = str(type(e).__name__) + (str(e) or '')
+            if 'Format not recognised' not in err_msg and 'NoBackendError' not in err_msg and 'LibsndfileError' not in err_msg:
+                raise
+            try:
+                from pydub import AudioSegment
+                converted_path = temp_path + '.wav'
+                AudioSegment.from_file(temp_path).export(converted_path, format='wav')
+                path_to_use = converted_path
+                result = voice_predictor.transcribe_only(path_to_use)
+            except ImportError:
+                raise ValueError(
+                    'Unsupported audio format. Use a modern browser (Chrome/Edge) so recording is sent as WAV, '
+                    'or install pydub and ffmpeg for server-side conversion.'
+                ) from e
+            except Exception as conv_e:
+                raise ValueError(
+                    'Could not convert audio. Install ffmpeg and pydub, or try again in Chrome/Edge.'
+                ) from conv_e
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        for p in (converted_path, temp_path):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
 
 @app.route('/api/predict-voice', methods=['POST'])
 def predict_voice():
@@ -105,7 +177,6 @@ def predict_voice():
         fd, temp_path = tempfile.mkstemp(suffix='.audio')
         os.close(fd)
         audio_file.save(temp_path)
-        print(f"Analyzing voice sample: {temp_path}")
 
         path_to_use = temp_path
         try:
@@ -135,15 +206,20 @@ def predict_voice():
                 ) from conv_e
 
         time_ms = round((end_time - start_time) * 1000, 2)
-        result['time_ms'] = time_ms
+        transcribed = result.get('text', '').strip() or '(no transcription)'
+        emotion = result.get('emotion', '?')
+
+        from datetime import datetime
+        ts = datetime.now().strftime('%H:%M:%S')
+        logger.info(f"[{ts}]  VOICE  | Transcribed: \"{transcribed[:60]}{'...' if len(transcribed)>60 else ''}\" → Emotion: {emotion} ({time_ms}ms)")
+
         result['type'] = 'voice'
         result.pop('confidence', None)  # don't send confidence to UI
+        result.pop('time_ms', None)  # don't send time for voice
         return jsonify(result)
     
     except Exception as e:
-        print(f"Error during voice prediction: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Voice prediction failed: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
     finally:
@@ -179,5 +255,6 @@ def serve_frontend(path):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', '5000'))
-    print(f"Starting Emotion Analysis API on http://localhost:{port}")
+    logger.info(f"Starting Emotion Analysis API on http://localhost:{port}")
+    logger.info("🚀 Application is running!")
     app.run(host='0.0.0.0', port=port, debug=False)

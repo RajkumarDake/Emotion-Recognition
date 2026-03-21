@@ -1,6 +1,5 @@
 """
 Text emotion prediction - terminal script.
-Enter text in the terminal; connects to the model and prints the predicted emotion.
 """
 
 import os
@@ -21,15 +20,24 @@ LABEL_ENCODER_PATH = os.path.join(MODELS_DIR, 'label_encoder.pkl')
 
 
 def main():
-    print("Loading text emotion model...")
-    predictor = EmotionPredictor(
-        model_path=TEXT_MODEL_PATH,
-        tokenizer_path=TOKENIZER_PATH,
-        label_encoder_path=LABEL_ENCODER_PATH
+    # Use pretrained model (same as API). Load Keras only if files exist (for fallback).
+    has_keras = (
+        os.path.exists(TEXT_MODEL_PATH)
+        and os.path.exists(TOKENIZER_PATH)
+        and os.path.exists(LABEL_ENCODER_PATH)
     )
-    # Warm-up: first prediction is slow; run one so the next ones are fast
+    if has_keras:
+        predictor = EmotionPredictor(
+            model_path=TEXT_MODEL_PATH,
+            tokenizer_path=TOKENIZER_PATH,
+            label_encoder_path=LABEL_ENCODER_PATH,
+        )
+    else:
+        predictor = EmotionPredictor()
+
+    # Warm-up: first prediction loads pretrained model and is slow
     predictor.predict("hello")
-    print("Model ready.\n")
+    print("Ready.\n")
     print("Enter text to analyze (or 'quit' / 'exit' to stop):")
     print("-" * 50)
 

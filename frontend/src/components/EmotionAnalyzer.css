@@ -554,6 +554,65 @@
   animation: emotionReveal 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.38s both;
 }
 
+.result-text-block-voice .result-text-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.result-analyzing-emotion {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.result-analyzing-emotion .spinner-small {
+  flex-shrink: 0;
+}
+
+/* Voice flow: two separate boxes */
+.result-panel-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.result-box-you-said {
+  flex-shrink: 0;
+}
+
+.result-box-you-said .result-card-wrapper {
+  box-shadow: 0 4px 24px rgba(0,0,0,.2), 0 0 0 1px rgba(99,102,241,.25);
+}
+
+.result-box-you-said .result-card-modern {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  background: var(--bg-card);
+  border: 2px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+}
+
+.result-box-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-sm);
+  text-transform: uppercase;
+}
+
+.result-box-text {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 .result-text {
   font-size: var(--font-size-base);
   color: var(--text-primary);
